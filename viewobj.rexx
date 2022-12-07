@@ -11,27 +11,25 @@ exec 'earlec.gddm(viewobj)'
 obj_ps = 'earlec.gddm(objhead)'
 SCREEN_WIDTH = 100
 
-/* rotation (radians) */
-xr = 0 /* NOTE: this is cumulative per render! */
-yr = 0 /* TODO: make it not cumulative per render. */
-zr = 0 /* ! */
-
-zoom = 0 /* camera zoom */
-fill = 0 /* Fill triangles == 1 */
+xcam = 0; ycam = 0; zcam = 0 /* camera pos */
+xpos = 0; ypos = 0; zpos = 0 /* model pos */
+xrot = 0; yrot = 0; zrot = 0 /* model rotation (radians) */
 
 /* Not correct! Just a "fudge factor" at the moment */
 angle_of_view = 70
 fov = tan(angle_of_view * 0.5 * pi() / 180)
-
+fill = 0 /* Fill triangles == 1 */
 
 /* ============ Let's go =============== */
 Signal on Error                        /* Set up error handling     */
 Signal on Syntax                       /*                           */
 Signal on Halt                         /*                           */
 
-/* Index to vectors */
-num = 0
-x = 1; y = 2; z = 3
+/* consts: Indices to vectors and lengths */
+num = 0 /* length of stem */
+x = 1; y = 2; z = 3 /* vector idx */
+
+overts. = 0 /* current object to draw (copies and transforms from `verts`) */
 
 /* Load the obj file into `verts` and `faces` */
 call load_parse_obj
@@ -43,12 +41,21 @@ Address gddm
 'GSENAB 1 1 1'   /* enable PF keys */
 
 /* main loop */
-call render
 do forever
+  'FSPCLR'
+  call render_instructions
+
+  xpos = xcam + 0; ypos = ycam + 0; zpos = zcam + 0
+  call drawobj
+
+  xpos = xcam -1; ypos = ycam + 0; zpos = zcam + 2
+  call drawobj
+
+  xpos = xcam + 1; ypos = ycam + 0; zpos = zcam + 4
+  call drawobj
+
+  'FSFRCE'
   call input
-  call transform
-  call render
-  xr = 0; yr = 0; zr = 0;
 end
 
 /* ============ And we're done ===============*/
@@ -66,15 +73,22 @@ exit
 /* =                ROUTINES               = */
 /* ========================================= */
 
+drawobj:
+  /* Like a gl "draw call": transform verts and render them */
+  call transform
+  call render
+  return 0
+
+/* =========== handle PF keys ============== */
 input:
   'ASREAD .attype .atval .' /* read pf keys */
   if attype == 1 then
   do
     if atval == 3 then signal endit
-    if atval == 4 then zoom = zoom + 1
-    if atval == 5 then zoom = zoom - 1
-    if atval == 6 then yr = -pi/8
-    if atval == 7 then yr = pi/8
+    if atval == 4 then zcam = zcam + 1
+    if atval == 5 then zcam = zcam - 1
+    if atval == 6 then yrot = yrot - pi/8
+    if atval == 7 then yrot = yrot + pi/8
     if atval == 8 then
     do
       if fill == 0 then fill = 1
@@ -85,46 +99,30 @@ return
 
 /* =========== transform verts ============== */
 transform:
+  overts. = verts. /* copy `verts` to `overts` and transform */
   do i = 1 to verts.num
+    overts.i. = verts.i.
     /* rot z */
-    v1 = verts.i.x * cos(zr) - verts.i.y * sin(zr)
-    v2 = verts.i.y * cos(zr) + verts.i.x * sin(zr)
-    verts.i.x = v1
-    verts.i.y = v2
+    overts.i.x = verts.i.x * cos(zrot) - verts.i.y * sin(zrot)
+    overts.i.y = verts.i.y * cos(zrot) + verts.i.x * sin(zrot)
+    overts.i.z = verts.i.z
 
     /* rot y */
-    v1 = verts.i.x * cos(yr) + verts.i.z * sin(yr)
-    v3 = verts.i.z * cos(yr) - verts.i.x * sin(yr)
-    verts.i.x = v1
-    verts.i.z = v3
+    overts.i.x = overts.i.x * cos(yrot) + overts.i.z * sin(yrot)
+    overts.i.z = overts.i.z * cos(yrot) - overts.i.x * sin(yrot)
 
     /* rot x */
-    v2 = verts.i.y * cos(xr) - verts.i.z * sin(xr)
-    v3 = verts.i.z * cos(xr) + verts.i.2y * sin(xr)
-    verts.i.y = v2
-    verts.i.z = v3
+    overts.i.y = overts.i.y * cos(xrot) - overts.i.z * sin(xrot)
+    overts.i.z = overts.i.z * cos(xrot) + overts.i.y * sin(xrot)
+
+    overts.i.x = overts.i.x - xpos
+    overts.i.y = overts.i.y - ypos
+    overts.i.z = overts.i.z - zpos
   end
 return 0
 
-/* ============== Render ================*/
+/* ============== Render current model ================*/
 render:
-  'FSPCLR'
-  /* Instructions */
-  'GSCOL -2'
-  'GSCHAR 0 0 28 "PF3 Exit |"'
-  'GSCHAR 7 0 28 "PF4 Zoom out |"'
-  'GSCHAR 16 0 28 "PF5 Zoom in |"'
-  'GSCHAR 24.5 0 28 "PF6 Rot Y CW |"'
-  'GSCHAR 34 0 28 "PF7 Rot Y CCW |"'
-  'GSCHAR 44 0 28 "PF8 Fill on/off"'
-
-  vtext = "verts:" verts.num
-  'GSCHAR 92 98 28 .vtext'
-  ftext = "faces:" faces.num
-  'GSCHAR 92 96.5 28 .ftext'
-
-  num_tris=0
-  zoff=-zoom
   do i=1 to faces.num
     f1 = (faces.i.1)+0 /* Needed the +0 cast for some reason! */
     f2 = (faces.i.2)+0 /* One of the axes wouldn't return */
@@ -140,26 +138,26 @@ render:
     dp = 8 - trunc(((vnx*0)+(vny*0)+(vnz*1)) * 8)
 
     /* Convert to clip coords */
-    vx1 = verts.f1.x
-    vy1 = verts.f1.y
-    vz1 = verts.f1.z
+    vx1 = overts.f1.x
+    vy1 = overts.f1.y
+    vz1 = overts.f1.z
     zz = vz1 /* collect z values to take avg */
-    x1 = clip(vx1 / scalez(vz1 + zoff))
-    y1 = clip(vy1  /scalez(vz1 + zoff))
+    x1 = clip(vx1 / scalez(vz1))
+    y1 = clip(vy1  /scalez(vz1))
 
-    vx2 = verts.f2.x
-    vy2 = verts.f2.y
-    vz2 = verts.f2.z
+    vx2 = overts.f2.x
+    vy2 = overts.f2.y
+    vz2 = overts.f2.z
     zz = zz + vz2
-    x2 = clip(vx2 / scalez(vz2 + zoff))
-    y2 = clip(vy2  /scalez(vz2 + zoff))
+    x2 = clip(vx2 / scalez(vz2))
+    y2 = clip(vy2  /scalez(vz2))
 
-    vx3 = verts.f3.x
-    vy3 = verts.f3.y
-    vz3 = verts.f3.z
+    vx3 = overts.f3.x
+    vy3 = overts.f3.y
+    vz3 = overts.f3.z
     zz = zz + vz3
-    x3 = clip(vx3 / scalez(vz3 + zoff))
-    y3 = clip(vy3 / scalez(vz3 + zoff))
+    x3 = clip(vx3 / scalez(vz3))
+    y3 = clip(vy3 / scalez(vz3))
 
     /* shoelace for backface culling */
     area = (vx1*vy2-vx2*vy1) + (vx2*vy3-vx3*vy2) + (vx3*vy1-vx1*vy3)
@@ -170,14 +168,15 @@ render:
     cx = (vx1 + vx2 + vx3) / 3
     cy = (vy1 + vy2 + vy3) / 3
     cz = (vz1 + vz2 + vz3) / 3
-    xc = clip(cx / scalez(cz + zoff))
-    yc = clip(cy / scalez(cz + zoff))
+    xc = clip(cx / scalez(cz))
+    yc = clip(cy / scalez(cz))
 
     nx = cx + vnx; ny = cy + vny; nz = cz + vnz
-    xn = clip(nx / scalez(nz + zoff))
-    yn = clip(ny / scalez(nz + zoff))
+    xn = clip(nx / scalez(nz))
+    yn = clip(ny / scalez(nz))
 
-    z_depth = trunc(((1 - (vz3 / 3)) + 1) / 2) /* avg z */
+    z_depth = trunc(zcam + (((1 - (vz3 / 3)) + 1) / 2)) /* avg z */
+    if (z_depth < 0) then z_depth = 0
     'GSLT .z_depth'  /* line type based on depth */
     'GSCOL .z_depth' /* line color based on depth */
     if fill then 'GSPAT .dp'
@@ -185,9 +184,26 @@ render:
     'GSMOVE .x1 .y1'
     'GSPLNE 3 (.x2 .x3 .x1) (.y2 .y3 .y1)'
     if fill then 'GSENDA'
-    if fill == 0 then 'GSMARK .xc .yc'
+    /*if fill == 0 then 'GSMARK .xc .yc'*/
   end i
-  'FSFRCE'
+  'fsfrce'
+return 0
+
+
+/* ============= UI instructions =============== */
+render_instructions:
+  'GSCOL -2'
+  'GSCHAR 0 0 28 "PF3 Exit |"'
+  'GSCHAR 7 0 28 "PF4 Cam out |"'
+  'GSCHAR 16 0 28 "PF5 Cam in |"'
+  'GSCHAR 24.5 0 28 "PF6 Rot Y CW |"'
+  'GSCHAR 34 0 28 "PF7 Rot Y CCW |"'
+  'GSCHAR 44 0 28 "PF8 Fill on/off"'
+
+  vtext = "verts:" verts.num
+  'GSCHAR 92 98 28 .vtext'
+  ftext = "faces:" faces.num
+  'GSCHAR 92 96.5 28 .ftext'
 return 0
 
 /* ============= Parse obj file =============== */
@@ -282,3 +298,4 @@ sin:  procedure; arg x;x=r2r(x);if x=0
 /**/
  pi:  pi = 3.141592653589
       return pi
+
