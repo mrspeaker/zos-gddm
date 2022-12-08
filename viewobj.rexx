@@ -8,12 +8,22 @@
 
 exec 'earlec.gddm(viewobj)'
 */
-obj_ps = 'earlec.gddm(objhead)'
+objs.1 = 'earlec.gddm(objskull)'
+objs.2 = 'earlec.gddm(objfloor)'
+objs.3 = 'earlec.gddm(objcube)'
+objs.4 = 'earlec.gddm(objtorus)'
+objs.5 = 'earlec.gddm(objsw)'
+objs.6 = 'earlec.gddm(objhead)'
+objs.0 = 6
+obj_cur = 1
+obj_ps = objs.obj_cur
+
 SCREEN_WIDTH = 100
 
 xcam = 0; ycam = 0; zcam = 0 /* camera pos */
 xpos = 0; ypos = 0; zpos = 0 /* model pos */
-xrot = 0; yrot = 0; zrot = 0 /* model rotation (radians) */
+xrot = 0; yrot = 0; zrot = 0 /* model rotation */
+xsc  = 1; ysc  = 1; zsc  = 1 /* model scale */
 
 /* Not correct! Just a "fudge factor" at the moment */
 angle_of_view = 70
@@ -45,13 +55,14 @@ do forever
   'FSPCLR'
   call render_instructions
 
+  xsc = 0.5; ysc = 0.5; zsc = 0.5
   xpos = xcam + 0; ypos = ycam + 0; zpos = zcam + 0
   call drawobj
 
-  xpos = xcam -1; ypos = ycam + 0; zpos = zcam + 2
+  xpos = xcam -1.5; ypos = ycam + 0; zpos = zcam + 2
   call drawobj
 
-  xpos = xcam + 1; ypos = ycam + 0; zpos = zcam + 4
+  xpos = xcam + 1.5; ypos = ycam + 0; zpos = zcam + 6
   call drawobj
 
   'FSFRCE'
@@ -94,6 +105,15 @@ input:
       if fill == 0 then fill = 1
       else fill = 0
     end
+    if (atval == 9) | (atval == 10)  then
+    do
+      address tso
+      if atval == 9 then obj_cur = obj_cur + 1
+      if obj_cur > objs.num then obj_cur = 1
+      obj_ps = objs.obj_cur
+      call load_parse_obj
+      address gddm
+    end
   end
 return
 
@@ -102,10 +122,16 @@ transform:
   overts. = verts. /* copy `verts` to `overts` and transform */
   do i = 1 to verts.num
     overts.i. = verts.i.
+
+    /* scale */
+    overts.i.x = verts.i.x * xsc
+    overts.i.y = verts.i.y * ysc
+    overts.i.z = verts.i.z * zsc
+
     /* rot z */
-    overts.i.x = verts.i.x * cos(zrot) - verts.i.y * sin(zrot)
-    overts.i.y = verts.i.y * cos(zrot) + verts.i.x * sin(zrot)
-    overts.i.z = verts.i.z
+    overts.i.x = overts.i.x * cos(zrot) - overts.i.y * sin(zrot)
+    overts.i.y = overts.i.y * cos(zrot) + overts.i.x * sin(zrot)
+    overts.i.z = overts.i.z
 
     /* rot y */
     overts.i.x = overts.i.x * cos(yrot) + overts.i.z * sin(yrot)
@@ -115,6 +141,8 @@ transform:
     overts.i.y = overts.i.y * cos(xrot) - overts.i.z * sin(xrot)
     overts.i.z = overts.i.z * cos(xrot) + overts.i.y * sin(xrot)
 
+
+    /* translate */
     overts.i.x = overts.i.x - xpos
     overts.i.y = overts.i.y - ypos
     overts.i.z = overts.i.z - zpos
@@ -177,7 +205,7 @@ render:
 
     z_depth = trunc(zcam + (((1 - (vz3 / 3)) + 1) / 2)) /* avg z */
     if (z_depth < 0) then z_depth = 0
-    'GSLT .z_depth'  /* line type based on depth */
+    /*'GSLT .z_depth'*/  /* line type based on depth */
     'GSCOL .z_depth' /* line color based on depth */
     if fill then 'GSPAT .dp'
     if fill then 'GSAREA 1'
@@ -199,6 +227,7 @@ render_instructions:
   'GSCHAR 24.5 0 28 "PF6 Rot Y CW |"'
   'GSCHAR 34 0 28 "PF7 Rot Y CCW |"'
   'GSCHAR 44 0 28 "PF8 Fill on/off"'
+  'GSCHAR 54 0 28 "PF9 Next obj"'
 
   vtext = "verts:" verts.num
   'GSCHAR 92 98 28 .vtext'
@@ -298,4 +327,3 @@ sin:  procedure; arg x;x=r2r(x);if x=0
 /**/
  pi:  pi = 3.141592653589
       return pi
-
